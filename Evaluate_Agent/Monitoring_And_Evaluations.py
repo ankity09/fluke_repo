@@ -1,12 +1,17 @@
 # Databricks notebook source
-# MAGIC %md # Synthesize evaluations from documents
+# MAGIC %md # Monitoring and  Evaluations from documents
 # MAGIC
 # MAGIC This notebook shows how you can synthesize evaluations for an agent that uses document retrieval. It uses the `generate_evals_df` method that is part of the `databricks-agents` Python package.
 
 # COMMAND ----------
 
-# MAGIC %pip install mlflow mlflow[databricks] databricks-agents databricks-sdk
-# MAGIC dbutils.library.restartPython()
+# DBTITLE 1,Install and Update Required Python Libraries
+#%pip install mlflow mlflow[databricks] databricks-agents databricks-sdk
+%pip install -U -qqqq databricks-sdk[openai] backoff
+%pip install -U -qqqq mlflow langchain langgraph==0.3.4 databricks-langchain pydantic databricks-agents unitycatalog-langchain[databricks] uv
+
+
+dbutils.library.restartPython()
 
 # COMMAND ----------
 
@@ -49,12 +54,72 @@
 
 # COMMAND ----------
 
+# DBTITLE 1,Load Global Configuration Settings
 # MAGIC %run ../global_config
 
 # COMMAND ----------
 
+# DBTITLE 1,Monitor Configuration for Fluke Schema Agent
+from databricks.agents.evals.monitors import create_monitor, get_monitor, update_monitor, delete_monitor
+
+# Get the current monitor configuration 
+monitor = get_monitor(endpoint_name="agents_ankit_yadav-fluke_schema-vs_agent")
+
+# COMMAND ----------
+
+# DBTITLE 1,Add Evaluation Metrics to Monitor Configuration
+# Update the monitor to add evaluation metrics
+monitor = update_monitor(
+    endpoint_name="agents_ankit_yadav-fluke_schema-vs_agent",
+    monitoring_config={
+        "sample": 1,  # Sample 100% of requests - this can be any number from 0 (0%) to 1 (100%).
+        # Select 0+ of Agent Evaluation's built-in judges
+        "metrics": ['guideline_adherence', 'groundedness', 'safety', 'relevance_to_query', 'chunk_relevance'],
+        # Customize these guidelines based on your business requirements.  These guidelines will be analyzed using Agent Evaluation's built in guideline_adherence judge
+        "global_guidelines": {
+            "english": ["The response must be in English."],
+            "clarity": ["The response must be clear, coherent, and concise."],
+            "relevant_if_not_refusal": ["Determine if the response provides an answer to the user's request.  A refusal to answer is considered relevant.  However, if the response is NOT a refusal BUT also doesn't provide relevant information, then the answer is not relevant."],
+            "no_answer_if_no_docs": ["If the agent can not find a relevant document, it should refuse to answer the question and not discuss the reasons why it could not answer."]
+        }
+    }
+)
+
+# COMMAND ----------
+
+# DBTITLE 1,Deploy and Query Fluke Warranty Chatbot
+from mlflow import deployments
+
+client = deployments.get_deploy_client("databricks")
+
+questions = [
+    "How do the 5725A and 52120A amplifiers extend the capabilities of the Fluke Calibration 5730A Calibrator?",
+    "What are the terms and conditions of the warranty for Fluke products?",
+    "What are the warranty terms for Fluke products regarding coverage duration, start date, and exclusions?",
+    "What adjustments are made to the specifications for the 220 μA and 2.2 mA ranges when using the 5725A amplifier with the 5730A calibrator?",
+    "What is the warranty period for Fluke products, and are there any exclusions or conditions under which the warranty does not apply?",
+    "What safety precautions should I take to prevent electrical shock when using the Fluke 5730A?",
+    "How do the 5725A and 52120A amplifiers extend the capabilities of the Fluke Calibration 5730A Calibrator?"
+]
+
+for i, question in enumerate(questions, 1):
+    print(f"\nQuestion {i}: {question}")  
+    response = client.predict(
+        endpoint="agents_ankit_yadav-fluke_schema-vs_agent",
+        inputs={
+            "messages": [
+                {"role": "user", "content": question}
+            ]
+        }
+    )
+    print(response)
+    
+
+# COMMAND ----------
+
+# DBTITLE 1,Generate and Evaluate RAG Chatbot Performance
 import mlflow
-from databricks.agents import generate_evals_df_v2 as generate_evals_df
+from databricks.agents.evals import generate_evals_df
 import pandas as pd
 
 df_docs = spark.sql(f"SELECT doc_content as content, path as doc_uri FROM {UC_CATALOG_NAME}.{UC_SCHEMA_NAME}.{DOCS_DATA_TABLE_NAME}")
@@ -101,7 +166,7 @@ display(evals)
 
 # Evaluate the model using the newly generated evaluation set. After the function call completes, click the UI link to see the results. You can use this as a baseline for your agent.
 results = mlflow.evaluate(
-  model="endpoints:/agents_ankit_yadav-fluke_schema-llama_3",
+  model="endpoints:/agents_ankit_yadav-fluke_schema-vs_agent",
   data=evals,
   model_type="databricks-agent"
 )
@@ -116,36 +181,6 @@ display(results.tables['eval_results'])
 
 # COMMAND ----------
 
-display(evals)
-
-# COMMAND ----------
-
-# Evaluate the model using the newly generated evaluation set. After the function call completes, click the UI link to see the results. You can use this as a baseline for your agent.
-results = mlflow.evaluate(
-  model="endpoints:/agents_ankit_yadav-fluke_schema-genie_model",
-  data=evals,
-  model_type="databricks-agent"
-)
-
-display(results.tables['eval_results'])
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC # Setting up Monitoring
-
-# COMMAND ----------
-
-from databricks.agents.monitoring import create_monitor
-
-monitor = create_monitor(
-    endpoint_name = "agents_ankit_yadav-fluke_schema-genie_model",
-    monitoring_config = {
-        "sample": 0.01,  # Sample 1% of requests
-        "metrics": ['guideline_adherence', 'groundedness', 'safety', 'relevance_to_query'],
-        "global_guidelines": {
-            "english": ["The response must be in English"],
-            "clarity": ["The response must be clear, coherent, and concise"],
-        }
-    }
-)
+# DBTITLE 1,Display Non-Skipped Evaluated Traces from Delta Table
+# Read evaluated traces from Delta
+display(spark.table(monitor.evaluated_traces_table).filter("evaluation_status != 'skipped'"))

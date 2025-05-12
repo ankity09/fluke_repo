@@ -28,11 +28,6 @@
 
 # COMMAND ----------
 
-LLM_ENDPOINT_NAME = "databricks-meta-llama-3-3-70b-instruct"
-VECTOR_INDEX_NAME="ankit_yadav.fluke_schema.ankit_yadav_fluke_index"
-
-# COMMAND ----------
-
 # MAGIC %%writefile agent.py
 # MAGIC from typing import Any, Generator, Optional, Sequence, Union
 # MAGIC
@@ -92,7 +87,7 @@ VECTOR_INDEX_NAME="ankit_yadav.fluke_schema.ankit_yadav_fluke_index"
 # MAGIC # for details
 # MAGIC vector_search_index_tools = [
 # MAGIC     VectorSearchRetrieverTool(
-# MAGIC         index_name=VECTOR_INDEX_NAME,
+# MAGIC         index_name="ankit_yadav.fluke_schema.ankit_yadav_fluke_index",
 # MAGIC         # TODO: specify index description for better agent tool selection
 # MAGIC         tool_description="Vector Search tool which can be queried to get additional context on Fluke products. This database contains information about Fluke products and their usage scenarios from sources like training videos, support call recordings and Fluke product manuals"
 # MAGIC     )
@@ -289,7 +284,7 @@ eval_examples = [
             "messages": [
                 {
                     "role": "user",
-                    "content": "What is 5370A multimeter product used for?"
+                    "content": "How do the 5725A and 52120A amplifiers extend the capabilities of the Fluke Calibration 5730A Calibrator?"
                 }
             ]
         },
@@ -341,15 +336,17 @@ mlflow.models.predict(
 mlflow.set_registry_uri("databricks-uc")
 
 # TODO: define the catalog, schema, and model name for your UC model
-catalog = UC_CATALOG_NAME
-schema = UC_SCHEMA_NAME
-model_name = MODEL_NAME
-UC_MODEL_NAME = f"{catalog}.{schema}.{model_name}"
+UC_CATALOG_NAME = "ankit_yadav"
+UC_SCHEMA_NAME = "fluke_schema"
+MODEL_NAME = "vs_agent"
+UC_MODEL_NAME = f"{UC_CATALOG_NAME}.{UC_SCHEMA_NAME}.{MODEL_NAME}"
 
 # register the model to UC
 uc_registered_model_info = mlflow.register_model(
     model_uri=logged_agent_info.model_uri, name=UC_MODEL_NAME
 )
+
+
 
 # COMMAND ----------
 

@@ -56,7 +56,7 @@ tools.extend(uc_toolkit.tools)
 # for details
 vector_search_index_tools = [
     VectorSearchRetrieverTool(
-        index_name=VECTOR_INDEX_NAME,
+        index_name="ankit_yadav.fluke_schema.ankit_yadav_fluke_index",
         # TODO: specify index description for better agent tool selection
         tool_description="Vector Search tool which can be queried to get additional context on Fluke products. This database contains information about Fluke products and their usage scenarios from sources like training videos, support call recordings and Fluke product manuals"
     )
